@@ -9,5 +9,6 @@
         <module name="pure-java-http-server" />
       </profile>
     </annotationProcessing>
+    <bytecodeTargetLevel target="8" />
   </component>
 </project>
