@@ -21,4 +21,9 @@ public class MyServerController {
     public String uuid(){
         return UUID.randomUUID().toString();
     }
+
+    @Route(method = HttpMethod.GET, route = "/goat")
+    public String goat(){
+        return "AYRTON SENNA";
+    }
 }
