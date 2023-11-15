@@ -1,30 +1,50 @@
 package org.example.server;
 
+import com.owlike.genson.Genson;
+import org.example.Pair;
 import org.example.annotations.Controller;
+import org.example.annotations.Payload;
 import org.example.annotations.Route;
 import org.example.enums.HttpMethod;
+import org.example.enums.HttpStatus;
+import org.example.response.HttpResponse;
 import org.example.spec.URLSpec;
+import sun.misc.Unsafe;
 
 import java.io.File;
 import java.io.IOException;
-import java.lang.annotation.Annotation;
+import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.*;
 import java.lang.reflect.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 public class RouteResolver {
     public static HashMap<URLSpec, Method> mappings = new HashMap<>();
+    public static List<Object> controllerInstances = new ArrayList<>();
+
+    public static Genson genson = new Genson();
 
     static {
         try {
+
+            Field f = Unsafe.class.getDeclaredField("theUnsafe");
+            f.setAccessible(true);
+            Unsafe unsafe = (Unsafe) f.get(null);
+
             Class[] classes = getClasses("org.example.controller");
             List<Class> controllers = Arrays
                 .stream(classes)
                 .filter(cls -> cls.isAnnotationPresent(Controller.class))
                 .collect(Collectors.toList());
 
-            controllers.stream().forEach(
+            for(Class ctrl : controllers){
+                controllerInstances.add(unsafe.allocateInstance(ctrl));
+            }
+
+            controllers.forEach(
                 ctlr -> {
                     List<Method> methods = Arrays
                                                 .stream(ctlr.getMethods())
@@ -33,7 +53,8 @@ public class RouteResolver {
 
                     for(Method method : methods){
                         Route route = method.getAnnotation(Route.class);
-                        URLSpec urlSpec = new URLSpec(route.route(), route.method());
+                        Controller controller = (Controller) ctlr.getAnnotation(Controller.class);
+                        URLSpec urlSpec = new URLSpec(controller.context() + route.route(), route.method());
                         mappings.put(urlSpec, method);
                     }
                 }
@@ -43,12 +64,78 @@ public class RouteResolver {
         }
     }
 
-    public static Method resolve (String[] httpRequestLine){
-        String method = httpRequestLine[0];
+    public static Pair<Method, Object[]> resolve (String[] httpRequestLine) throws MalformedURLException {
+        String httpMethod = httpRequestLine[0];
         String path = httpRequestLine[1];
-        URLSpec urlSpec = new URLSpec(path, HttpMethod.valueOf(method));
+        URLSpec urlSpec = new URLSpec(path, HttpMethod.valueOf(httpMethod));
+        Method method = mappings.get(urlSpec);
+        Matcher matcher = matchUrl(path);
 
-        return mappings.get(urlSpec);
+        while (matcher.find()) {
+            System.out.println("Captured group: " + matcher.group(1));
+        }
+
+        if(method == null){
+            String [] pathArray = path.split("/");
+            String pathCopy = path;
+            for(int i = pathArray.length - 1; i > 0; i--){
+                pathCopy = pathCopy.replace(pathArray[i], "*");
+                URLSpec urlSpec1 = new URLSpec(pathCopy, HttpMethod.valueOf(httpMethod));
+                Method methodMatched = mappings.get(urlSpec1);
+                if(methodMatched != null){
+                    Object[] args = resolveArgs(path, pathCopy, httpRequestLine, methodMatched);
+                    return new Pair<>(methodMatched, args);
+                }
+            }
+        } else {
+                Object[] args = resolveArgs(path, path, httpRequestLine, method);
+                return new Pair<>(method, args);
+        }
+        return null;
+    }
+
+    private static Object[] resolveArgs(String path, String pathCopy, String[] httpRequestLine, Method methodMatched) {
+        String[] pathSplit = path.split("/");
+        String[] pathCopySplit = pathCopy.split("/");
+        ArrayList<Object> args = new ArrayList<>();
+        for(int i = 0; i < pathSplit.length; i++){
+            if(!Objects.equals(pathSplit[i], pathCopySplit[i])){
+                args.add(pathSplit[i]);
+            }
+        }
+
+        String method = httpRequestLine[0];
+        if(method.equalsIgnoreCase(HttpMethod.POST.name())){
+            Class<?> payloadType = Arrays.stream(methodMatched.getParameterTypes())
+                    .filter(cls -> cls.isAnnotationPresent(Payload.class))
+                    .findFirst()
+                    .orElse(Object.class);
+
+            Object arg = getJsonObject(httpRequestLine, payloadType);
+            args.add(arg);
+        }
+
+        return args.toArray();
+    }
+
+    private static <T> T getJsonObject(String[] httpRequestLine, Class<T> payloadType) {
+        return genson.deserialize(httpRequestLine[2], payloadType);
+    }
+
+    public static HttpResponse process(String[] httpRequestLine) throws MalformedURLException {
+        Pair<Method, Object[]> method = resolve(httpRequestLine);
+        // args = [path var, query parameter, payload]
+        return controllerInstances.stream()
+                .filter(ctrl -> Arrays.asList(ctrl.getClass().getMethods()).contains(method.getKey()))
+                .findFirst()
+                .map(instance -> {
+                    try {
+                        return  (HttpResponse) method.getKey().invoke(instance, method.getValue());
+                    } catch (IllegalAccessException | InvocationTargetException e) {
+                        throw new RuntimeException(e);
+                    }
+                })
+                .orElse(new HttpResponse("404", HttpStatus.NOT_FOUND));
     }
 
     /**
@@ -100,5 +187,18 @@ public class RouteResolver {
             }
         }
         return classes;
+    }
+
+    private static Matcher matchUrl(String path){
+        // Define the regex pattern with a capturing group for everything after each forward slash
+        String regex = "/([^/]+)";
+
+        // Compile the pattern
+        Pattern pattern = Pattern.compile(regex);
+
+        // Create a matcher for the input text
+        Matcher matcher = pattern.matcher(path);
+
+        return matcher;
     }
 }
