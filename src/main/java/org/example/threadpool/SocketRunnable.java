@@ -1,11 +1,10 @@
 package org.example.threadpool;
 
+import org.example.enums.HttpStatus;
+import org.example.response.HttpResponse;
 import org.example.server.RouteResolver;
-import sun.misc.Unsafe;
 
 import java.io.*;
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.net.Socket;
 import java.util.Objects;
 
@@ -34,36 +33,29 @@ public class SocketRunnable implements Runnable {
 
             String[] requestLines = request.split("\r\n");
             String[] httpRequestLine = requestLines[0].split(" ");
-            String method = httpRequestLine[0];
-            String path = httpRequestLine[1];
-            String version = httpRequestLine[2];
-            String host = requestLines[1].split(" ")[1];
 
-            OutputStream os = client.getOutputStream();
-            os.write("HTTP/1.1 200 OK\r\n".getBytes());
-            os.write("ContentType: text/html\r\n".getBytes());
-            os.write("\r\n".getBytes());
-
-            Field f = Unsafe.class.getDeclaredField("theUnsafe");
-            f.setAccessible(true);
-            Unsafe unsafe = (Unsafe) f.get(null);
-
-            Method method1 = RouteResolver.resolve(httpRequestLine);
-            if (method1 == null) {
-                os.write("<h1>404 NOT FOUND</h1>\r\n\r\n".getBytes());
-                os.flush();
-            } else {
-                Object controllerClass = unsafe.allocateInstance(method1.getDeclaringClass());
-
-                os.write(("<h1>" + method1.invoke(controllerClass).toString() + "</h1>\r\n\r\n").getBytes());
-                os.flush();
-            }
-
-            os.close();
+            HttpResponse response = RouteResolver.process(httpRequestLine);
+            writeToOutputStream(response);
             System.out.println("Request processed, time: " + (System.currentTimeMillis() - time));
         } catch (Exception e) {
             e.printStackTrace();
+            HttpResponse response = new HttpResponse(e, HttpStatus.INTERNAL_SERVER_ERROR);
+            try {
+                writeToOutputStream(response);
+            } catch (IOException ex) {
+                throw new RuntimeException(ex);
+            }
             throw new RuntimeException(e);
         }
+    }
+
+    private void writeToOutputStream(HttpResponse response) throws IOException {
+        OutputStream os = client.getOutputStream();
+        os.write(String.format("HTTP/1.1 %d\r\n", response.getStatus().getCode()).getBytes());
+        os.write("ContentType: text/html\r\n".getBytes());
+        os.write("\r\n".getBytes());
+        os.write(("<h1>" + response.getResponseObject().toString() + "</h1>\r\n\r\n").getBytes());
+        os.flush();
+        os.close();
     }
 }

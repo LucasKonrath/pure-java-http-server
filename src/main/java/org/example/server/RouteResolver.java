@@ -1,13 +1,16 @@
 package org.example.server;
 
+import javafx.util.Pair;
 import org.example.annotations.Controller;
 import org.example.annotations.Route;
 import org.example.enums.HttpMethod;
+import org.example.enums.HttpStatus;
+import org.example.response.HttpResponse;
 import org.example.spec.URLSpec;
+import sun.misc.Unsafe;
 
 import java.io.File;
 import java.io.IOException;
-import java.lang.annotation.Annotation;
 import java.net.URL;
 import java.util.*;
 import java.lang.reflect.*;
@@ -15,16 +18,26 @@ import java.util.stream.Collectors;
 
 public class RouteResolver {
     public static HashMap<URLSpec, Method> mappings = new HashMap<>();
+    public static List<Object> controllerInstances = new ArrayList<>();
 
     static {
         try {
+
+            Field f = Unsafe.class.getDeclaredField("theUnsafe");
+            f.setAccessible(true);
+            Unsafe unsafe = (Unsafe) f.get(null);
+
             Class[] classes = getClasses("org.example.controller");
             List<Class> controllers = Arrays
                 .stream(classes)
                 .filter(cls -> cls.isAnnotationPresent(Controller.class))
                 .collect(Collectors.toList());
 
-            controllers.stream().forEach(
+            for(Class ctrl : controllers){
+                controllerInstances.add(unsafe.allocateInstance(ctrl));
+            }
+
+            controllers.forEach(
                 ctlr -> {
                     List<Method> methods = Arrays
                                                 .stream(ctlr.getMethods())
@@ -33,7 +46,8 @@ public class RouteResolver {
 
                     for(Method method : methods){
                         Route route = method.getAnnotation(Route.class);
-                        URLSpec urlSpec = new URLSpec(route.route(), route.method());
+                        Controller controller = (Controller) ctlr.getAnnotation(Controller.class);
+                        URLSpec urlSpec = new URLSpec(controller.context() + route.route(), route.method());
                         mappings.put(urlSpec, method);
                     }
                 }
@@ -43,12 +57,57 @@ public class RouteResolver {
         }
     }
 
-    public static Method resolve (String[] httpRequestLine){
-        String method = httpRequestLine[0];
+    public static Pair<Method, Object[]> resolve (String[] httpRequestLine){
+        String httpMethod = httpRequestLine[0];
         String path = httpRequestLine[1];
-        URLSpec urlSpec = new URLSpec(path, HttpMethod.valueOf(method));
+        URLSpec urlSpec = new URLSpec(path, HttpMethod.valueOf(httpMethod));
 
-        return mappings.get(urlSpec);
+        Method method = mappings.get(urlSpec);
+
+        if(method == null){
+            String [] pathArray = path.split("/");
+            String pathCopy = path;
+            for(int i = pathArray.length - 1; i > 0; i--){
+                pathCopy = pathCopy.replace(pathArray[i], "*");
+                URLSpec urlSpec1 = new URLSpec(pathCopy, HttpMethod.valueOf(httpMethod));
+                Method methodMatched = mappings.get(urlSpec1);
+                if(methodMatched != null){
+                    Object[] args = resolveArgs(path, pathCopy);
+                    return new Pair<>(methodMatched, args);
+                }
+            }
+        } else {
+            return new Pair<>(method, new Object[]{});
+        }
+        return null;
+    }
+
+    private static Object[] resolveArgs(String path, String pathCopy) {
+        String[] pathSplit = path.split("/");
+        String[] pathCopySplit = pathCopy.split("/");
+        ArrayList<Object> args = new ArrayList<>();
+        for(int i = 0; i < pathSplit.length; i++){
+            if(!Objects.equals(pathSplit[i], pathCopySplit[i])){
+                args.add(pathSplit[i]);
+            }
+        }
+        return args.toArray();
+    }
+
+    public static HttpResponse process(String[] httpRequestLine){
+        Pair<Method, Object[]> method = resolve(httpRequestLine);
+        // args = [path var, query parameter, payload]
+        return controllerInstances.stream()
+                .filter(ctrl -> Arrays.asList(ctrl.getClass().getMethods()).contains(method.getKey()))
+                .findFirst()
+                .map(instance -> {
+                    try {
+                        return  (HttpResponse) method.getKey().invoke(instance, method.getValue());
+                    } catch (IllegalAccessException | InvocationTargetException e) {
+                        throw new RuntimeException(e);
+                    }
+                })
+                .orElse(new HttpResponse("404", HttpStatus.NOT_FOUND));
     }
 
     /**
