@@ -22,6 +22,6 @@ export const options = {
 };
 
 export default () => {
-  const url = 'http://localhost:9001/uuid'
+  const url = 'http://localhost:9001/test/test'
   const urlRes = http.get(url);
 };

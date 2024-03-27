@@ -38,7 +38,7 @@ public class RouteResolver {
             List<Class> controllers = Arrays
                 .stream(classes)
                 .filter(cls -> cls.isAnnotationPresent(Controller.class))
-                .collect(Collectors.toList());
+                .toList();
 
             for(Class ctrl : controllers){
                 controllerInstances.add(unsafe.allocateInstance(ctrl));
@@ -66,6 +66,9 @@ public class RouteResolver {
 
     public static Pair<Method, Object[]> resolve (String[] httpRequestLine, String body) throws MalformedURLException {
         String httpMethod = httpRequestLine[0];
+        if(httpRequestLine.length == 1){
+            return new Pair<>(null, new Object[]{});
+        }
         String path = httpRequestLine[1];
         URLSpec urlSpec = new URLSpec(path, HttpMethod.valueOf(httpMethod));
         Method method = mappings.get(urlSpec);
@@ -105,22 +108,11 @@ public class RouteResolver {
         }
 
         String method = httpRequestLine[0];
-        if(method.equalsIgnoreCase(HttpMethod.POST.name())){
-            Class<?> payloadType = Arrays.stream(methodMatched.getParameterTypes())
-                    .filter(cls -> cls.isAnnotationPresent(Payload.class))
-                    .findFirst()
-                    .orElse(Object.class);
-
-            Object arg = getJsonObject(body, payloadType);
-            args.add(arg);
+        if(HttpMethod.POST.name().equalsIgnoreCase(method) || HttpMethod.PUT.name().equalsIgnoreCase(method)){
+            args.add(body);
         }
 
         return args.toArray();
-    }
-
-    private static <T> T getJsonObject(String body, Class<T> payloadType) {
-        // Switch to text - no external libs
-        return genson.deserialize(body, payloadType);
     }
 
     public static HttpResponse process(String[] httpRequestLine, String body) throws MalformedURLException {

@@ -15,7 +15,7 @@ public class ThreadPooledServer implements Runnable {
 
     protected Thread runningThread;
 
-    protected ExecutorService threadPool = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+    protected ExecutorService threadPool = Executors.newVirtualThreadPerTaskExecutor();
 
     public ThreadPooledServer(int port){
         this.port = port;

@@ -20,23 +20,22 @@ public class SocketRunnable implements Runnable {
     public void run() {
         try {
             long time = System.currentTimeMillis();
-            BufferedReader br = new BufferedReader(new InputStreamReader(client.getInputStream()));
             StringBuilder sb = new StringBuilder();
-//            String currLine;
-//
-//            while (!Objects.equals(currLine = br.readLine(), "")) {
-//                sb.append(currLine + "\r\n");
-//            }
-//
-//            sb.append(br.readLine());
-//
-//            String request = sb.toString();
+            InputStream is = client.getInputStream();
+            do {
+                sb.append((char) is.read());
+            } while (is.available() > 0);
+            String request = sb.toString();
 
 
-            String request = br.lines().collect(Collectors.joining("\r\n"));
+//            String request = br.lines().collect(Collectors.joining("\r\n"));
 
             String[] requestLines = request.split("\r\n");
             String[] httpRequestLine = requestLines[0].split(" ");
+
+            if(httpRequestLine.length == 1){
+                return;
+            }
 
             String body = null;
             if("POST".equals(httpRequestLine[0]) || "PUT".equals(httpRequestLine[0])) {
