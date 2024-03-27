@@ -33,8 +33,18 @@ public class MyServerController {
         return new HttpResponse(name, HttpStatus.OK);
     }
 
+    @Route(method = HttpMethod.GET, route = "/test")
+    public HttpResponse testGet(){
+        return new HttpResponse("Get: ", HttpStatus.CREATED);
+    }
+
     @Route(method = HttpMethod.POST, route = "/test")
     public HttpResponse testPost(@Payload String request){
-        return new HttpResponse(request, HttpStatus.CREATED);
+        return new HttpResponse("Post: " + request, HttpStatus.CREATED);
+    }
+
+    @Route(method = HttpMethod.PUT, route = "/test")
+    public HttpResponse testPut(@Payload String request){
+        return new HttpResponse("Put: " + request, HttpStatus.CREATED);
     }
 }
