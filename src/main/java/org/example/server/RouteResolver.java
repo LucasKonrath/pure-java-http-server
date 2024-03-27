@@ -64,7 +64,7 @@ public class RouteResolver {
         }
     }
 
-    public static Pair<Method, Object[]> resolve (String[] httpRequestLine) throws MalformedURLException {
+    public static Pair<Method, Object[]> resolve (String[] httpRequestLine, String body) throws MalformedURLException {
         String httpMethod = httpRequestLine[0];
         String path = httpRequestLine[1];
         URLSpec urlSpec = new URLSpec(path, HttpMethod.valueOf(httpMethod));
@@ -83,18 +83,18 @@ public class RouteResolver {
                 URLSpec urlSpec1 = new URLSpec(pathCopy, HttpMethod.valueOf(httpMethod));
                 Method methodMatched = mappings.get(urlSpec1);
                 if(methodMatched != null){
-                    Object[] args = resolveArgs(path, pathCopy, httpRequestLine, methodMatched);
+                    Object[] args = resolveArgs(path, pathCopy, httpRequestLine, methodMatched, body);
                     return new Pair<>(methodMatched, args);
                 }
             }
         } else {
-                Object[] args = resolveArgs(path, path, httpRequestLine, method);
+                Object[] args = resolveArgs(path, path, httpRequestLine, method, body);
                 return new Pair<>(method, args);
         }
         return null;
     }
 
-    private static Object[] resolveArgs(String path, String pathCopy, String[] httpRequestLine, Method methodMatched) {
+    private static Object[] resolveArgs(String path, String pathCopy, String[] httpRequestLine, Method methodMatched, String body) {
         String[] pathSplit = path.split("/");
         String[] pathCopySplit = pathCopy.split("/");
         ArrayList<Object> args = new ArrayList<>();
@@ -111,20 +111,20 @@ public class RouteResolver {
                     .findFirst()
                     .orElse(Object.class);
 
-            Object arg = getJsonObject(httpRequestLine, payloadType);
+            Object arg = getJsonObject(body, payloadType);
             args.add(arg);
         }
 
         return args.toArray();
     }
 
-    private static <T> T getJsonObject(String[] httpRequestLine, Class<T> payloadType) {
-        return genson.deserialize(httpRequestLine[2], payloadType);
+    private static <T> T getJsonObject(String body, Class<T> payloadType) {
+        // Switch to text - no external libs
+        return genson.deserialize(body, payloadType);
     }
 
-    public static HttpResponse process(String[] httpRequestLine) throws MalformedURLException {
-        Pair<Method, Object[]> method = resolve(httpRequestLine);
-        // args = [path var, query parameter, payload]
+    public static HttpResponse process(String[] httpRequestLine, String body) throws MalformedURLException {
+        Pair<Method, Object[]> method = resolve(httpRequestLine, body);
         return controllerInstances.stream()
                 .filter(ctrl -> Arrays.asList(ctrl.getClass().getMethods()).contains(method.getKey()))
                 .findFirst()

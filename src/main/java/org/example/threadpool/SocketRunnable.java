@@ -7,6 +7,7 @@ import org.example.server.RouteResolver;
 import java.io.*;
 import java.net.Socket;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 public class SocketRunnable implements Runnable {
 
@@ -21,20 +22,28 @@ public class SocketRunnable implements Runnable {
             long time = System.currentTimeMillis();
             BufferedReader br = new BufferedReader(new InputStreamReader(client.getInputStream()));
             StringBuilder sb = new StringBuilder();
-            String currLine;
+//            String currLine;
+//
+//            while (!Objects.equals(currLine = br.readLine(), "")) {
+//                sb.append(currLine + "\r\n");
+//            }
+//
+//            sb.append(br.readLine());
+//
+//            String request = sb.toString();
 
-            while (!Objects.equals(currLine = br.readLine(), "")) {
-                sb.append(currLine + "\r\n");
-            }
 
-            sb.append("\r\n");
-
-            String request = sb.toString();
+            String request = br.lines().collect(Collectors.joining("\r\n"));
 
             String[] requestLines = request.split("\r\n");
             String[] httpRequestLine = requestLines[0].split(" ");
 
-            HttpResponse response = RouteResolver.process(httpRequestLine);
+            String body = null;
+            if("POST".equals(httpRequestLine[0]) || "PUT".equals(httpRequestLine[0])) {
+                body = requestLines[requestLines.length - 1];
+            }
+
+            HttpResponse response = RouteResolver.process(httpRequestLine, body);
             writeToOutputStream(response);
             System.out.println("Request processed, time: " + (System.currentTimeMillis() - time));
         } catch (Exception e) {

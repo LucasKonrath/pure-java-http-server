@@ -5,7 +5,8 @@ import org.example.threadpool.ThreadPooledServer;
 
 public class Main {
 
-    // Make get with parameters
+    // Resolve args parameters order
+    // Do Integration tests
     public static void main(String[] args) throws Exception {
         ThreadPooledServer server = new ThreadPooledServer(9001);
         new Thread(server).start();
